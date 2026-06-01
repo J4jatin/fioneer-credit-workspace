@@ -28,7 +28,7 @@ export default defineConfig({
       timeout: 30_000,
     },
     {
-      command: 'py -3.12 -m uvicorn main:app --port 8000',
+      command: process.env.CI ? 'python -m uvicorn main:app --port 8000' : 'py -3.12 -m uvicorn main:app --port 8000',
       cwd: '../backend',
       port: 8000,
       reuseExistingServer: true,
