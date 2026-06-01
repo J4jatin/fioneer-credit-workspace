@@ -8,6 +8,18 @@ A cloud-native micro frontend application for managing the full lifecycle of **c
 
 ---
 
+## Live Demo
+
+| Service | URL |
+|---|---|
+| 🌐 Frontend | https://fioneer-credit-workspace.vercel.app |
+| ⚙️ Backend API | https://fioneer-credit-workspace.onrender.com |
+| 📖 API Docs | https://fioneer-credit-workspace.onrender.com/docs |
+
+> Note: Backend is on Render free tier — first load may take 30s to wake up.
+
+---
+
 ## Architecture: Micro Frontends
 
 ```
