@@ -1,9 +1,19 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, date
 import uuid
+import logging
+import time
+
+# --- Logging Setup ---
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("fioneer-api")
 
 app = FastAPI(title="Fioneer Credit Workspace API", version="1.0.0")
 
@@ -13,6 +23,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- Request Logging Middleware ---
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.time()
+    logger.info(f"→ {request.method} {request.url.path}")
+    response = await call_next(request)
+    duration = round((time.time() - start) * 1000, 2)
+    logger.info(f"← {request.method} {request.url.path} | status={response.status_code} | {duration}ms")
+    return response
+
+# --- Role-Based Access Control ---
+# Pass header: X-User-Role: admin  OR  X-User-Role: viewer
+# ADMIN: full access (read + create + update stage)
+# VIEWER: read-only (GET endpoints only)
+
+VALID_ROLES = ["admin", "viewer"]
+
+def get_role(x_user_role: Optional[str] = Header(default="viewer")) -> str:
+    role = (x_user_role or "viewer").lower()
+    if role not in VALID_ROLES:
+        raise HTTPException(status_code=400, detail=f"Invalid role '{role}'. Use: {VALID_ROLES}")
+    logger.info(f"Request by role: {role}")
+    return role
+
+def require_admin(role: str = Depends(get_role)) -> str:
+    if role != "admin":
+        logger.warning(f"Unauthorized write attempt by role: {role}")
+        raise HTTPException(status_code=403, detail="Admin role required for this action.")
+    return role
 
 # --- Models ---
 class Loan(BaseModel):
@@ -76,7 +116,7 @@ def get_loan(loan_id: str):
     return loan
 
 @app.post("/loans", response_model=Loan)
-def create_loan(data: LoanCreate):
+def create_loan(data: LoanCreate, role: str = Depends(require_admin)):
     loan = Loan(
         id=str(uuid.uuid4())[:8],
         borrower=data.borrower,
@@ -88,10 +128,11 @@ def create_loan(data: LoanCreate):
         updated_at=str(date.today()),
     )
     loans_db.append(loan)
+    logger.info(f"[LOAN CREATED] id={loan.id} borrower={loan.borrower} amount={loan.loan_amount}")
     return loan
 
 @app.patch("/loans/{loan_id}/stage", response_model=Loan)
-def update_stage(loan_id: str, data: LoanUpdate):
+def update_stage(loan_id: str, data: LoanUpdate, role: str = Depends(require_admin)):
     loan = next((l for l in loans_db if l.id == loan_id), None)
     if not loan:
         raise HTTPException(status_code=404, detail="Loan not found")
@@ -101,8 +142,10 @@ def update_stage(loan_id: str, data: LoanUpdate):
     allowed = STAGE_TRANSITIONS.get(loan.stage, [])
     if new_stage not in allowed:
         raise HTTPException(status_code=400, detail=f"Cannot move from {loan.stage} to {new_stage}. Allowed: {allowed}")
+    old_stage = loan.stage
     loan.stage = new_stage
     loan.updated_at = str(date.today())
+    logger.info(f"[STAGE TRANSITION] loan_id={loan_id} {old_stage} → {new_stage}")
     return loan
 
 @app.get("/analytics/summary")

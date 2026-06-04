@@ -93,6 +93,52 @@ Transitions validated on backend — invalid moves return HTTP 400.
 
 ---
 
+## Backend: Logging & Access Control
+
+### Request Logging
+
+Every API request is logged automatically with method, path, status code, and response time:
+
+```
+2026-06-04 19:45:01 [INFO] fioneer-api: → POST /loans
+2026-06-04 19:45:01 [INFO] fioneer-api: [LOAN CREATED] id=a3f1b2c4 borrower=John Smith amount=450000.0
+2026-06-04 19:45:01 [INFO] fioneer-api: ← POST /loans | status=200 | 3.21ms
+2026-06-04 19:45:10 [INFO] fioneer-api: [STAGE TRANSITION] loan_id=a3f1b2c4 APPLICATION → REVIEW
+```
+
+### Role-Based Access Control
+
+Pass the `X-User-Role` header to identify the caller's role:
+
+| Role | Access |
+|---|---|
+| `viewer` (default) | GET endpoints only — read loans, view analytics |
+| `admin` | Full access — create loans, update stage transitions |
+
+**Example — read as viewer (no header needed):**
+```bash
+curl http://localhost:8000/loans
+```
+
+**Example — create loan as admin:**
+```bash
+curl -X POST http://localhost:8000/loans \
+  -H "Content-Type: application/json" \
+  -H "X-User-Role: admin" \
+  -d '{"borrower":"Max Müller","property_address":"Neumarkt 1, Köln","loan_amount":500000,"interest_rate":3.7}'
+```
+
+**Example — blocked write attempt as viewer:**
+```bash
+curl -X POST http://localhost:8000/loans \
+  -H "Content-Type: application/json" \
+  -H "X-User-Role: viewer" \
+  -d '{...}'
+# → 403 Forbidden: "Admin role required for this action."
+```
+
+---
+
 ## Quick Start
 
 ### 1. Backend
